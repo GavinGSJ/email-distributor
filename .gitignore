@@ -1,0 +1,6 @@
+config/smtp.toml
+userdata/
+backups/
+output/
+*.sendlog.jsonl
+__pycache__/

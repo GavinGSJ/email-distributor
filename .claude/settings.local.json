@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -)",
+      "Bash(PYTHONIOENCODING=utf-8 python -m unittest discover -s tests -v)",
+      "Bash(PYTHONIOENCODING=utf-8 python -m unittest discover -s tests)",
+      "Bash(PYTHONIOENCODING=utf-8 python -m mailer preview jobs/rfq_demo/job.toml --only supplier_b@example.com --out output/preview)",
+      "PowerShell($env:PYTHONIOENCODING='utf-8'; $p = Start-Process python -ArgumentList '-m','mailer.webapp','--no-browser' -WorkingDirectory 'D:\\\\Desktop\\\\Me\\\\email' -PassThru -NoNewWindow -RedirectStandardOutput \"$env:TEMP\\\\mw.log\"; Start-Sleep 2; try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/; \"HTTP $\\($r.StatusCode\\), token injected: $\\(-not $r.Content.Contains\\('__TOKEN__'\\)\\)\" } finally { Stop-Process -Id $p.Id -Force }; Get-Content \"$env:TEMP\\\\mw.log\" -Encoding utf8)",
+      "Bash(PYTHONIOENCODING=utf-8 python -)",
+      "Bash(netsh winhttp *)",
+      "Bash(grep -v '^$')",
+      "Bash(tasklist)",
+      "Bash(nslookup smtp.263.net)",
+      "Bash(nslookup smtp.263.net 223.5.5.5)",
+      "Bash(PYTHONIOENCODING=utf-8 python -c ' *)",
+      "Bash(powershell -NoProfile -Command \"Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object Name,InterfaceDescription | Format-Table -AutoSize | Out-String; Get-Process WmsxwdCore,wmsxwd -ErrorAction SilentlyContinue | Select-Object Name,Id | Format-Table | Out-String\")",
+      "Bash(powershell -NoProfile -Command \"Get-Process WmsxwdCore -ErrorAction SilentlyContinue | Select-Object Name,Id | Out-String; \\(Get-NetAdapter -Name Meta -ErrorAction SilentlyContinue\\).Status\")",
+      "Bash(python -c \"import ast,sys;ast.parse\\(open\\('D:/Desktop/Me/email/mailer/webapp.py',encoding='utf-8'\\).read\\(\\)\\);print\\('ok'\\)\")",
+      "PowerShell(cmd /c \"assoc .pyw & ftype Python.NoConFile\" 2>$null; \\(Get-ItemProperty 'Registry::HKEY_CLASSES_ROOT\\\\.pyw' -ErrorAction SilentlyContinue\\).'\\(default\\)'; \\(Get-ItemProperty 'Registry::HKEY_CLASSES_ROOT\\\\Python.NoConFile\\\\shell\\\\open\\\\command' -ErrorAction SilentlyContinue\\).'\\(default\\)'; Get-Command pythonw, pyw -ErrorAction SilentlyContinue | Select-Object Name, Source | Format-Table -AutoSize | Out-String)",
+      "Bash(python \"C:/Users/GUISHA~1/AppData/Local/Temp/claude/D--Desktop-Me-email/c47f05b5-a69b-473f-8499-5c47d4cc2970/scratchpad/patch_js.py\")",
+      "Bash(node --check mailer/static/app.js)",
+      "Bash(python \"C:/Users/GUISHA~1/AppData/Local/Temp/claude/D--Desktop-Me-email/c47f05b5-a69b-473f-8499-5c47d4cc2970/scratchpad/patch_groups.py\")",
+      "Bash(python \"C:/Users/GUISHA~1/AppData/Local/Temp/claude/D--Desktop-Me-email/c47f05b5-a69b-473f-8499-5c47d4cc2970/scratchpad/patch_library.py\")",
+      "Bash(powershell -NoProfile -Command \"\\(Get-Process WmsxwdCore -ErrorAction SilentlyContinue | Measure-Object\\).Count; \\(Get-NetAdapter -Name Meta -ErrorAction SilentlyContinue\\).Status; [System.Net.Dns]::GetHostAddresses\\('imap.263.net'\\) | % IPAddressToString\")",
+      "Bash(python \"C:/Users/GUISHA~1/AppData/Local/Temp/claude/D--Desktop-Me-email/c47f05b5-a69b-473f-8499-5c47d4cc2970/scratchpad/patch_webapp_history.py\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0,'.'\\); import mailer.webapp; print\\('import ok'\\)\")"
+    ]
+  }
+}

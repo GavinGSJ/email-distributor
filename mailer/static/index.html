@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>邮件助手</title>
+<link rel="stylesheet" href="/app.css">
+<script>window.TOKEN = "__TOKEN__";</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">✉ 邮件助手</div>
+  <nav>
+    <button data-view="compose" class="nav">写邮件</button>
+    <button data-view="library" class="nav">资料管理</button>
+    <button data-view="signature" class="nav">签名</button>
+    <button data-view="account" class="nav">账号设置</button>
+  </nav>
+  <div id="who" class="who"></div>
+  <button id="btn-quit" class="link small" title="关闭后台程序">退出</button>
+</header>
+
+<main>
+  <!-- ===== 账号 ===== -->
+  <section id="view-account" class="view">
+    <div class="card narrow">
+      <h2 id="acc-title">登录发件邮箱</h2>
+      <p class="muted" id="acc-intro">只需设置一次，之后自动保存。密码会加密保存在本机。</p>
+      <label>邮箱地址<input id="acc-email" type="email" placeholder="you@company.com" autocomplete="off"></label>
+      <div id="acc-provider" class="provider"></div>
+      <label id="acc-ent-wrap" class="hidden">邮箱服务商
+        <select id="acc-ent"></select>
+      </label>
+      <label>密码 / 授权码
+        <input id="acc-password" type="password" autocomplete="new-password" placeholder="">
+      </label>
+      <div id="acc-help" class="help"></div>
+      <label>发件人名称 <span class="muted">（收件人看到的名字，如“张三 - 采购部”）</span>
+        <input id="acc-name" type="text">
+      </label>
+      <label class="check"><input id="acc-save-sent" type="checkbox" checked> 发送后存入邮箱的“已发送”文件夹（推荐，便于在网页版/Foxmail 中溯源）</label>
+      <details id="acc-adv">
+        <summary>高级设置（服务器地址）</summary>
+        <div class="row3">
+          <label>SMTP 服务器（发信）<input id="acc-host" type="text"></label>
+          <label>端口<input id="acc-port" type="number"></label>
+          <label>加密方式
+            <select id="acc-sec"><option value="ssl">SSL</option><option value="starttls">STARTTLS</option><option value="none">无</option></select>
+          </label>
+        </div>
+        <div id="acc-imap-row" class="row3">
+          <label>IMAP 服务器（存入已发送）<input id="acc-imap-host" type="text"></label>
+          <label>端口<input id="acc-imap-port" type="number"></label>
+          <label>加密方式
+            <select id="acc-imap-sec"><option value="ssl">SSL</option><option value="starttls">STARTTLS</option><option value="none">无</option></select>
+          </label>
+        </div>
+      </details>
+      <div class="actions"><button id="acc-save" class="primary">测试并保存</button></div>
+    </div>
+  </section>
+
+  <!-- ===== 签名 ===== -->
+  <section id="view-signature" class="view">
+    <div class="card narrow">
+      <h2>邮件签名</h2>
+      <p class="muted">设置一次，写邮件时勾选“附带签名”即自动加在正文末尾。</p>
+      <label>签名文字<textarea id="sig-text" rows="6" placeholder="张三&#10;采购部 | 示例科技有限公司&#10;电话：010-12345678"></textarea></label>
+      <div class="logo-row">
+        <div>Logo 图片 <span class="muted">（可选）</span></div>
+        <div id="sig-logo" class="logo-box"></div>
+        <button id="sig-logo-btn">选择图片</button>
+        <button id="sig-logo-del" class="link danger hidden">移除</button>
+        <input id="sig-logo-file" type="file" accept="image/*" hidden>
+      </div>
+      <div class="muted small">预览</div>
+      <div id="sig-preview" class="sig-preview"></div>
+      <div class="actions"><button id="sig-save" class="primary">保存签名</button></div>
+    </div>
+  </section>
+
+  <!-- ===== 资料管理 ===== -->
+  <section id="view-library" class="view">
+    <div class="lib-tabs">
+      <button data-lib="templates" class="lib-tab">邮件模板 <span id="lib-n-templates" class="badge"></span></button>
+      <button data-lib="lists" class="lib-tab">收件人名单 <span id="lib-n-lists" class="badge"></span></button>
+      <button data-lib="groups" class="lib-tab">抄送/密送组合 <span id="lib-n-groups" class="badge"></span></button>
+      <button data-lib="history" class="lib-tab">发送记录 <span id="lib-n-history" class="badge"></span></button>
+      <button data-lib="backup" class="lib-tab">备份与恢复</button>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div><h2 id="lib-title"></h2><p id="lib-desc" class="muted small lib-desc"></p></div>
+        <div id="lib-tools" class="tools"></div>
+      </div>
+      <div id="lib-body"></div>
+      <input id="lib-file" type="file" accept=".csv,.xlsx,.xlsm" hidden>
+      <input id="bk-file" type="file" accept=".zip" hidden>
+    </div>
+  </section>
+
+  <!-- ===== 写邮件 ===== -->
+  <section id="view-compose" class="view">
+    <div class="card">
+      <div class="card-head">
+        <h2>① 收件人 <span id="rcpt-count" class="badge"></span></h2>
+        <div class="tools">
+          <button id="rcpt-pick">从名单添加</button>
+          <button id="rcpt-savelist">保存为名单</button>
+          <button id="rcpt-import">导入 Excel / CSV</button>
+          <button id="rcpt-addcol">添加列</button>
+          <button id="rcpt-clear" class="link danger">清空</button>
+          <input id="rcpt-file" type="file" accept=".csv,.xlsx,.xlsm" hidden>
+        </div>
+      </div>
+      <p class="muted small">每一行发一封独立邮件，收件人之间互相看不到。可以直接从 Excel 复制多行粘贴进表格；一格里填多个邮箱用 ; 分隔。其他列（公司、联系人…）可在正文中作为变量使用。</p>
+      <div class="table-wrap"><table id="rcpt-table"></table></div>
+      <button id="rcpt-addrow" class="link">＋ 添加一行</button>
+    </div>
+
+    <div class="card">
+      <h2>② 邮件内容</h2>
+      <label for="c-cc">抄送 <span class="muted">（每封都会抄送，多个用 ; 分隔）</span></label>
+      <div class="field-row"><input id="c-cc" type="text"><button class="grp-btn" data-grp="c-cc" data-label="抄送">组合 ▾</button></div>
+      <button id="c-bcc-toggle" class="link small">＋ 添加密送</button>
+      <div id="c-bcc-wrap" class="hidden">
+        <label for="c-bcc">密送</label>
+        <div class="field-row"><input id="c-bcc" type="text"><button class="grp-btn" data-grp="c-bcc" data-label="密送">组合 ▾</button></div>
+      </div>
+
+      <div class="gv-block">
+        <div><b>通用变量</b> <span class="muted small">本次所有邮件都相同的内容，如项目名称、项目代号、采购物资。在主题或正文中写 {{变量名}} 即可引用。</span></div>
+        <div id="gv-list"></div>
+        <button id="gv-add" class="link small">＋ 添加通用变量</button>
+      </div>
+
+      <label>主题<input id="c-subject" type="text" placeholder="例如：【询价】{{项目名称}} - {{公司}}"></label>
+      <div class="vars"><span class="muted small">点击插入变量（或在主题/正文里输入 {{ 自动提示）：</span><span id="c-vars"></span></div>
+      <label>正文<textarea id="c-body" rows="12" placeholder="{{联系人}}，您好：&#10;&#10;我司现就「{{项目名称}}」项目的 {{采购物资}} 向贵司询价……"></textarea></label>
+      <div id="c-warn" class="warn"></div>
+      <label class="check"><input id="c-sig" type="checkbox"> 附带签名 <a href="#" data-goto="signature" class="small">编辑签名</a></label>
+    </div>
+
+    <div class="card">
+      <h2>③ 附件</h2>
+      <div id="att-drop" class="drop">把文件拖到这里，或 <u>点击选择</u><input id="att-file" type="file" multiple hidden></div>
+      <ul id="att-list" class="att-list"></ul>
+    </div>
+    <div class="spacer"></div>
+  </section>
+</main>
+
+<footer id="bar" class="bar hidden">
+  <div class="bar-left">
+    <select id="tpl-select"><option value="">载入模板…</option></select>
+    <button id="tpl-save">存为模板</button>
+    <button id="tpl-del" class="link danger hidden">删除模板</button>
+    <button id="c-new" class="link">新建空白</button>
+    <span id="saved" class="muted small"></span>
+  </div>
+  <div class="bar-right">
+    <button id="btn-preview">预览</button>
+    <button id="btn-test">发一封给自己测试</button>
+    <button id="btn-send" class="primary">发送</button>
+  </div>
+</footer>
+
+<div id="modal" class="modal hidden"><div class="modal-box"><div id="modal-body"></div><div id="modal-actions" class="actions"></div></div></div>
+<div id="toast" class="toast hidden"></div>
+<ul id="ac" class="ac hidden"></ul>
+<div id="grp-menu" class="menu hidden"></div>
+<script src="/app.js"></script>
+</body>
+</html>

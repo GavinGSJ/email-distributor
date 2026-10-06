@@ -1,0 +1,25 @@
+# 路径都相对于本文件所在目录。名单里的每一列（邮箱/公司/联系人…）都能在
+# 主题和正文里写成 {{列名}}；下面 [variables] 里的是所有邮件共用的变量。
+
+[mail]
+subject   = "【询价】{{项目名称}} - {{公司}}"
+body      = "body.txt"                         # .txt 按段落转 HTML；.html 则原样使用
+signature = "../../signatures/default.html"     # 可省略
+cc        = ["manager@example.com", "finance@example.com"]
+# bcc     = []
+# reply_to = "buyer@example.com"
+attachments = ["attachments"]                   # 文件或目录均可，可写多个
+
+[recipients]
+file = "suppliers.csv"                          # .csv 或 .xlsx
+# sheet = "Sheet1"                              # Excel 才需要
+
+# 注意：TOML 规定中文变量名必须加双引号
+[variables]
+"我方公司" = "示例科技有限公司"
+"项目名称" = "XX 设备采购"
+"截止日期" = "2026-10-15"
+
+[send]
+interval_seconds = 2     # 两封之间的间隔，避免被服务器判定为垃圾邮件
+max_attachment_mb = 20
