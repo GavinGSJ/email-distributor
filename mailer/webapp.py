@@ -29,7 +29,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from . import backup, providers
 from .archive import SendArchive
 from .attachments import load_attachments
-from .body import Body
+from .body import Body, clean_editor_html, html_to_text
 from .errors import ConfigError, MailerError, PrepareError
 from .recipients import parse_emails, read_table, recipients_from_table
 from .sender import SmtpSender
@@ -65,7 +65,10 @@ class App:
         body = compose.get("body") or ""
         if not subject:
             raise ConfigError("请填写邮件主题")
-        if not body.strip():
+        rich = compose.get("body_format") == "html"  # written in the rich-text editor
+        if rich:
+            body = clean_editor_html(body)
+        if not (html_to_text(body) if rich else body).strip():
             raise ConfigError("请填写邮件正文")
 
         columns = compose.get("columns") or []
@@ -80,7 +83,7 @@ class App:
         return build_mails(
             recipients,
             subject=subject,
-            body=Body(body, is_html=False),
+            body=Body(body, is_html=rich),
             signature=self.store.signature() if compose.get("use_signature", True) else None,
             cc=parse_emails(compose.get("cc", ""), "抄送"),
             bcc=parse_emails(compose.get("bcc", ""), "密送"),

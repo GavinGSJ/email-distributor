@@ -264,6 +264,41 @@ class WebApiTests(ApiTestCase):
         self.assertEqual(status, 400)
         self.assertTrue(all("项目名称" in p for p in res["problems"]))
 
+    def test_rich_text_body(self):
+        self.login()
+        body = (
+            '<div><b>{{联系人}}</b>，您好：</div><div><br></div>'
+            '<div><span style="color:#d93025;font-size:18px;font-family:SimSun;background:url(http://x/y)">请报价</span>'
+            ' {{公<b>司</b>}} <img src="http://evil/x.png" onerror="alert(1)"><script>alert(1)</script>'
+            '<a href="javascript:alert(1)" onclick="x()">坏链接</a> <a href="https://example.com">好链接</a></div>'
+        )
+        status, pv = self.call("/api/preview", self.compose(body=body, body_format="html"))
+        self.assertEqual(status, 200, pv)
+        html = pv["mails"][0]["html"]
+        self.assertIn("<b>张经理</b>", html)  # variable inside formatting is filled
+        self.assertIn("甲公司", html)  # variable split by formatting is still recognised
+        self.assertIn("color:#d93025", html)
+        self.assertIn("font-family:SimSun", html)
+        self.assertIn('href="https://example.com"', html)
+        for bad in ("<script", "<img", "onerror", "onclick", "javascript:", "url("):
+            self.assertNotIn(bad, html)
+
+        # variable values are escaped, plain-text alternative is generated
+        c = self.compose(body="<div>{{公司}}</div>", body_format="html")
+        c["rows"][0]["公司"] = "<i>甲</i> & 乙"
+        status, pv = self.call("/api/preview", c)
+        self.assertIn("&lt;i&gt;甲&lt;/i&gt; &amp; 乙", pv["mails"][0]["html"])
+
+        # an editor with only empty lines counts as no body
+        status, res = self.call("/api/preview", self.compose(body="<div><br></div>", body_format="html"))
+        self.assertEqual(status, 400)
+        self.assertIn("正文", res["error"])
+
+        # drafts saved before the editor existed (no body_format) still work as plain text
+        status, pv = self.call("/api/preview", self.compose(body="第一行\n\n<b>不是标签</b>"))
+        self.assertEqual(status, 200, pv)
+        self.assertIn("&lt;b&gt;不是标签", pv["mails"][0]["html"])
+
     def test_recipient_lists(self):
         rows = [{"邮箱": "a@example.com", "公司": "甲"}, {"邮箱": "b@example.com", "公司": "乙"}]
         status, lists = self.call("/api/lists", {"name": "阀门供应商", "list": {"columns": ["邮箱", "公司"], "rows": rows}})

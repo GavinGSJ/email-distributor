@@ -136,7 +136,49 @@
 
       <label>主题<input id="c-subject" type="text" placeholder="例如：【询价】{{项目名称}} - {{公司}}"></label>
       <div class="vars"><span class="muted small">点击插入变量（或在主题/正文里输入 {{ 自动提示）：</span><span id="c-vars"></span></div>
-      <label>正文<textarea id="c-body" rows="12" placeholder="{{联系人}}，您好：&#10;&#10;我司现就「{{项目名称}}」项目的 {{采购物资}} 向贵司询价……"></textarea></label>
+      <div class="field-label">正文</div>
+      <div class="rte">
+        <div class="rte-bar" id="rte-bar">
+          <select data-rte="fontName" title="字体">
+            <option value="">字体</option>
+            <option value="Microsoft YaHei">微软雅黑</option>
+            <option value="SimSun">宋体</option>
+            <option value="SimHei">黑体</option>
+            <option value="KaiTi">楷体</option>
+            <option value="Arial">Arial</option>
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Courier New">Courier New</option>
+          </select>
+          <select data-rte="fontSize" title="字号">
+            <option value="">字号</option>
+            <option value="12px">12</option><option value="14px">14</option><option value="16px">16</option>
+            <option value="18px">18</option><option value="20px">20</option><option value="24px">24</option>
+            <option value="32px">32</option>
+          </select>
+          <span class="sep"></span>
+          <button type="button" data-cmd="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
+          <button type="button" data-cmd="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
+          <button type="button" data-cmd="underline" title="下划线 (Ctrl+U)"><u>U</u></button>
+          <button type="button" data-cmd="strikeThrough" title="删除线"><s>S</s></button>
+          <span class="sep"></span>
+          <label class="clr" title="文字颜色">A<input type="color" data-color="foreColor" value="#d93025"></label>
+          <label class="clr hl" title="背景高亮">▇<input type="color" data-color="hiliteColor" value="#fff176"></label>
+          <span class="sep"></span>
+          <button type="button" data-cmd="justifyLeft" title="左对齐">⇤</button>
+          <button type="button" data-cmd="justifyCenter" title="居中">↔</button>
+          <button type="button" data-cmd="justifyRight" title="右对齐">⇥</button>
+          <span class="sep"></span>
+          <button type="button" data-cmd="insertUnorderedList" title="项目符号">• ≡</button>
+          <button type="button" data-cmd="insertOrderedList" title="编号">1. ≡</button>
+          <button type="button" data-cmd="outdent" title="减少缩进">⇠</button>
+          <button type="button" data-cmd="indent" title="增加缩进">⇢</button>
+          <span class="sep"></span>
+          <button type="button" data-cmd="createLink" title="插入链接">🔗</button>
+          <button type="button" data-cmd="removeFormat" title="清除格式">清除格式</button>
+        </div>
+        <div id="c-body" class="rte-body" contenteditable="true" spellcheck="false"
+             data-placeholder="{{联系人}}，您好：&#10;&#10;我司现就「{{项目名称}}」项目的 {{采购物资}} 向贵司询价……"></div>
+      </div>
       <div id="c-warn" class="warn"></div>
       <label class="check"><input id="c-sig" type="checkbox"> 附带签名 <a href="#" data-goto="signature" class="small">编辑签名</a></label>
     </div>

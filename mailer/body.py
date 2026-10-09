@@ -74,3 +74,113 @@ def html_to_text(html):
     text = "".join(parser.parts)
     lines = [line.strip() for line in text.split("\n")]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+# -- rich-text bodies written in the web editor --------------------------------
+_KEEP_TAGS = {
+    "p", "div", "br", "span", "b", "strong", "i", "em", "u", "s", "strike", "sub", "sup",
+    "ul", "ol", "li", "blockquote", "a", "h1", "h2", "h3", "hr",
+}
+_DROP_WITH_CONTENT = {"script", "style", "head", "title", "iframe", "object", "embed", "template", "svg", "math"}
+_VOID = {"br", "hr"}
+_KEEP_STYLES = {
+    "color", "background-color", "font-size", "font-family", "font-weight", "font-style",
+    "text-decoration", "text-align", "line-height", "margin-left", "padding-left",
+}
+_SAFE_STYLE_VALUE = re.compile(r"^[\w\s#%.,\"'()+-]+$")
+_SAFE_HREF = re.compile(r"^(https?://|mailto:)", re.IGNORECASE)
+_VAR_WITH_TAGS = re.compile(r"\{\{((?:[^{}<]|<[^>]*>)*)\}\}")
+
+
+def _clean_style(style):
+    kept = []
+    for decl in style.split(";"):
+        name, _, value = decl.partition(":")
+        name, value = name.strip().lower(), value.strip()
+        if name in _KEEP_STYLES and _SAFE_STYLE_VALUE.match(value) and "url(" not in value.lower():
+            kept.append(f"{name}:{value}")
+    return ";".join(kept)
+
+
+class _Sanitizer(HTMLParser):
+    """Whitelist filter for editor HTML: keeps basic formatting, drops scripts,
+    event handlers, images and anything else it does not know."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out = []
+        self._open = []
+        self._skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _DROP_WITH_CONTENT:
+            self._skip += 1
+            return
+        if self._skip or tag not in _KEEP_TAGS:
+            if tag == "font" and not self._skip:  # legacy <font color/face> -> span
+                self._start_font(dict(attrs))
+            return
+        attrs = dict(attrs)
+        parts = [f'<{tag}']
+        style = _clean_style(attrs.get("style") or "")
+        if style:
+            parts.append(f' style="{escape(style, quote=True)}"')
+        if tag == "a":
+            href = (attrs.get("href") or "").strip()
+            if _SAFE_HREF.match(href):
+                parts.append(f' href="{escape(href, quote=True)}"')
+        self.out.append("".join(parts) + ">")
+        if tag not in _VOID:
+            self._open.append(tag)
+
+    def _start_font(self, attrs):
+        style = []
+        if attrs.get("color"):
+            style.append(f"color:{attrs['color']}")
+        if attrs.get("face"):
+            style.append(f"font-family:{attrs['face']}")
+        style = _clean_style(";".join(style))
+        self.out.append(f'<span style="{escape(style, quote=True)}">' if style else "<span>")
+        self._open.append("span")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag in _VOID:
+            self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if tag in _DROP_WITH_CONTENT:
+            self._skip = max(0, self._skip - 1)
+            return
+        if self._skip:
+            return
+        if tag == "font":
+            tag = "span"
+        if tag in self._open:  # close anything left open inside it first
+            while self._open:
+                top = self._open.pop()
+                self.out.append(f"</{top}>")
+                if top == tag:
+                    break
+
+    def handle_data(self, data):
+        if not self._skip:
+            self.out.append(escape(data, quote=False))
+
+    def result(self):
+        while self._open:
+            self.out.append(f"</{self._open.pop()}>")
+        return "".join(self.out)
+
+
+def sanitize_html(html):
+    parser = _Sanitizer()
+    parser.feed(html)
+    parser.close()
+    return parser.result()
+
+
+def clean_editor_html(html):
+    """Sanitize editor HTML, and make {{variable}} survive formatting that was applied
+    to only part of it (e.g. {{项目<b>名称</b>}}) so it is still recognised."""
+    html = sanitize_html(html)
+    return _VAR_WITH_TAGS.sub(lambda m: "{{" + re.sub(r"<[^>]*>", "", m.group(1)) + "}}", html)
