@@ -11,7 +11,7 @@ let C = null;         // current compose
 let lastField = null; // subject/body field that last had focus, for variable insertion
 
 const blankCompose = (cc = "") => ({
-  subject: "", body: "", cc, bcc: "",
+  subject: "", body: "", body_format: "html", cc, bcc: "",
   columns: [EMAIL_COL, "公司", "联系人"], rows: [{}, {}, {}],
   variables: [{ name: "项目名称", value: "" }, { name: "项目代号", value: "" }, { name: "采购物资", value: "" }],
   attachments: [], use_signature: true,
@@ -244,6 +244,138 @@ function renderCount() {
   $("btn-send").textContent = n ? `发送（${n} 封）` : "发送";
 }
 
+// ---------------------------------------------------------------- rich-text body
+const RTE_TAGS = new Set(["P", "DIV", "BR", "SPAN", "B", "STRONG", "I", "EM", "U", "S", "STRIKE", "SUB", "SUP", "UL", "OL", "LI",
+  "BLOCKQUOTE", "A", "H1", "H2", "H3", "HR"]);
+const RTE_DROP = new Set(["SCRIPT", "STYLE", "HEAD", "TITLE", "IFRAME", "OBJECT", "EMBED", "TEMPLATE", "SVG", "MATH"]);
+const RTE_STYLES = ["color", "background-color", "font-size", "font-family", "font-weight", "font-style", "text-decoration",
+  "text-align", "line-height", "margin-left", "padding-left"];
+
+function copyStyle(from, to, extra = {}) {
+  for (const prop of RTE_STYLES) {
+    const v = from.style ? from.style.getPropertyValue(prop) : "";
+    if (v && !/url\(/i.test(v)) to.style.setProperty(prop, v);
+  }
+  for (const [k, v] of Object.entries(extra)) if (v) to.style.setProperty(k, v);
+}
+
+function cleanInto(src, dst) {
+  for (const n of src.childNodes) {
+    if (n.nodeType === 3) { dst.appendChild(document.createTextNode(n.nodeValue)); continue; }
+    if (n.nodeType !== 1 || RTE_DROP.has(n.tagName)) continue;
+    let target = dst;
+    if (n.tagName === "FONT") {
+      target = document.createElement("span");
+      copyStyle(n, target, { color: n.getAttribute("color"), "font-family": n.getAttribute("face") });
+      dst.appendChild(target);
+    } else if (RTE_TAGS.has(n.tagName)) {
+      target = document.createElement(n.tagName.toLowerCase());
+      copyStyle(n, target);
+      if (n.tagName === "A" && /^(https?:|mailto:)/i.test(n.getAttribute("href") || "")) target.setAttribute("href", n.getAttribute("href"));
+      dst.appendChild(target);
+    }
+    cleanInto(n, target); // unknown tags (img, table, …) are unwrapped, keeping their text
+  }
+}
+
+// Only a small whitelist of tags/styles survives; used for pasted content and saved bodies.
+function cleanHtml(html) {
+  const out = document.createElement("div");
+  cleanInto(new DOMParser().parseFromString(html || "", "text/html").body, out);
+  return out.innerHTML;
+}
+
+const plainToHtml = (text) => String(text || "").replace(/\r\n?/g, "\n").split("\n")
+  .map((l) => `<div>${l ? esc(l) : "<br>"}</div>`).join("");
+
+function bodyText(c) {
+  if (c.body_format !== "html") return c.body || "";
+  const root = new DOMParser().parseFromString(c.body || "", "text/html").body;
+  root.querySelectorAll("br").forEach((b) => b.replaceWith("\n"));
+  root.querySelectorAll("div,p,li").forEach((b) => b.append("\n"));
+  return root.textContent.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+let rteSel = null; // last caret/selection inside the body editor
+
+function saveRteSel() {
+  const sel = getSelection(), ed = $("c-body");
+  if (sel.rangeCount && ed.contains(sel.anchorNode)) rteSel = sel.getRangeAt(0).cloneRange();
+}
+
+function focusRte() {
+  const ed = $("c-body"), sel = getSelection();
+  ed.focus();
+  if (rteSel) { sel.removeAllRanges(); sel.addRange(rteSel); }
+}
+
+function setBody(c) {
+  $("c-body").innerHTML = c.body_format === "html" ? cleanHtml(c.body) : plainToHtml(c.body);
+  rteSel = null;
+}
+
+function getBody() {
+  const ed = $("c-body");
+  if (/^(<div>)?<br>(<\/div>)?$/.test(ed.innerHTML)) ed.innerHTML = ""; // keep the placeholder working
+  return ed.innerHTML;
+}
+
+function rteChanged() { $("c-body").dispatchEvent(new Event("input", { bubbles: true })); }
+
+async function rteCommand(cmd, value) {
+  if (cmd === "createLink") {
+    saveRteSel();
+    const url = await ask("链接地址（http:// 或 https:// 开头）", "https://");
+    if (!url) return;
+    if (!/^(https?:\/\/|mailto:)/i.test(url)) return toast("链接需要以 http:// 或 https:// 开头", true);
+    focusRte();
+    document.execCommand("createLink", false, url);
+  } else {
+    focusRte();
+    document.execCommand("styleWithCSS", false, cmd !== "fontSize");
+    document.execCommand(cmd, false, value);
+    if (cmd === "fontSize") { // the browser only knows sizes 1-7: mark with 7, then turn into a real pixel size
+      const spans = [];
+      for (const f of $("c-body").querySelectorAll('font[size="7"]')) {
+        const span = document.createElement("span");
+        span.style.fontSize = value;
+        span.append(...f.childNodes);
+        f.replaceWith(span);
+        spans.push(span);
+      }
+      if (spans.length) { // keep the text selected so more formatting can follow
+        const range = document.createRange();
+        range.setStartBefore(spans[0]); range.setEndAfter(spans[spans.length - 1]);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      }
+    }
+  }
+  saveRteSel(); rteChanged();
+}
+
+function initRte() {
+  const ed = $("c-body"), bar = $("rte-bar");
+  document.execCommand("defaultParagraphSeparator", false, "div"); // Enter = new line, like webmail editors
+  document.addEventListener("selectionchange", saveRteSel);
+  bar.addEventListener("mousedown", (e) => { if (!e.target.closest("select, input")) e.preventDefault(); }); // keep the selection
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-cmd]"); if (b) rteCommand(b.dataset.cmd);
+  });
+  bar.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.dataset.rte && t.value) rteCommand(t.dataset.rte, t.value);
+    if (t.dataset.rte) t.value = "";
+    if (t.dataset.color) rteCommand(t.dataset.color, t.value);
+  });
+  ed.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const html = e.clipboardData.getData("text/html"), text = e.clipboardData.getData("text/plain");
+    if (html) document.execCommand("insertHTML", false, cleanHtml(html));
+    else document.execCommand("insertText", false, text);
+  });
+  ed.addEventListener("drop", (e) => e.preventDefault()); // dropped files/images are not supported
+}
+
 // ---------------------------------------------------------------- variables
 const VAR_RE = /\{\{\s*([^{}\s]+)\s*\}\}/g;
 const gvNames = () => C.variables.map((v) => v.name.trim()).filter(Boolean);
@@ -265,7 +397,7 @@ function renderVars() {
 
 function renderWarnings() {
   const used = new Set();
-  for (const text of [$("c-subject").value, $("c-body").value]) for (const m of text.matchAll(VAR_RE)) used.add(m[1]);
+  for (const text of [$("c-subject").value, $("c-body").textContent]) for (const m of text.matchAll(VAR_RE)) used.add(m[1]);
   const known = new Set(knownVars().map((v) => v.name));
   const msgs = [];
   const unknown = [...used].filter((n) => !known.has(n));
@@ -312,12 +444,18 @@ function caretPoint(f, pos) {
 }
 
 function onFieldInput(e) {
-  const f = e.target, pos = f.selectionStart;
-  const m = f.value.slice(0, pos).match(/\{\{\s*([^{}\s]*)$/);
+  const f = e.target;
+  let pos, before, node = null;
+  if (f.isContentEditable) {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed || sel.anchorNode.nodeType !== 3 || !f.contains(sel.anchorNode)) return hideAC();
+    node = sel.anchorNode; pos = sel.anchorOffset; before = node.nodeValue.slice(0, pos);
+  } else { pos = f.selectionStart; before = f.value.slice(0, pos); }
+  const m = before.match(/\{\{\s*([^{}\s]*)$/);
   const items = m ? knownVars().filter((v) => v.name.includes(m[1])) : [];
   if (!items.length) return hideAC();
-  Object.assign(AC, { field: f, items, idx: 0, start: pos - m[0].length });
-  const { x, y } = caretPoint(f, pos);
+  Object.assign(AC, { field: f, items, idx: 0, start: pos - m[0].length, node, end: pos });
+  let { x, y } = node ? editorCaretPoint(f, node, pos) : caretPoint(f, pos);
   const ac = $("ac");
   ac.style.left = x + "px"; ac.style.top = y + "px";
   renderAC(); ac.classList.remove("hidden");
@@ -328,10 +466,29 @@ function renderAC() {
     `<li data-ac="${i}" class="${i === AC.idx ? "active" : ""}">{{${esc(v.name)}}}<span class="kind">${v.kind}</span></li>`).join("");
 }
 
+function editorCaretPoint(f, node, pos) {
+  const range = document.createRange();
+  range.setStart(node, pos); range.collapse(true);
+  const r = range.getBoundingClientRect(), box = f.getBoundingClientRect();
+  if (!r.height) return { x: box.left + 12, y: box.top + 30 };
+  return { x: Math.min(r.left, box.right - 180), y: r.bottom + 2 };
+}
+
 const hideAC = () => { $("ac").classList.add("hidden"); AC.field = null; };
 
 function chooseAC(i) {
   const f = AC.field, name = AC.items[i].name;
+  if (f.isContentEditable) {
+    const node = AC.node, text = node.nodeValue;
+    if (!node.isConnected) return hideAC();
+    const rest = text.slice(AC.end).replace(/^[^{}\s]*\}\}/, "");
+    node.nodeValue = text.slice(0, AC.start) + `{{${name}}}` + rest;
+    const range = document.createRange();
+    range.setStart(node, AC.start + name.length + 4); range.collapse(true);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    hideAC(); f.focus(); rteChanged();
+    return;
+  }
   const rest = f.value.slice(f.selectionStart).replace(/^[^{}\s]*\}\}/, ""); // swallow a half-typed tail
   f.value = f.value.slice(0, AC.start) + `{{${name}}}` + rest;
   f.selectionStart = f.selectionEnd = AC.start + name.length + 4;
@@ -559,6 +716,12 @@ async function onGroupMenuClick(e) {
 function insertVar(name) {
   const f = lastField || $("c-body");
   const token = `{{${name}}}`;
+  if (f.isContentEditable) {
+    focusRte();
+    document.execCommand("insertText", false, token);
+    saveRteSel(); rteChanged();
+    return;
+  }
   const s = f.selectionStart ?? f.value.length, e = f.selectionEnd ?? f.value.length;
   f.value = f.value.slice(0, s) + token + f.value.slice(e);
   f.focus(); f.selectionStart = f.selectionEnd = s + token.length;
@@ -584,7 +747,7 @@ function fillCompose() {
   $("c-cc").value = C.cc || ""; $("c-bcc").value = C.bcc || "";
   $("c-bcc-wrap").classList.toggle("hidden", !C.bcc);
   $("c-bcc-toggle").classList.toggle("hidden", !!C.bcc);
-  $("c-subject").value = C.subject || ""; $("c-body").value = C.body || "";
+  $("c-subject").value = C.subject || ""; setBody(C); C.body = getBody(); C.body_format = "html";
   $("c-sig").checked = C.use_signature !== false;
   if (!Array.isArray(C.variables)) C.variables = [];
   renderCommonVars(); renderTable(); renderAttachments(); renderTemplates();
@@ -592,7 +755,7 @@ function fillCompose() {
 
 function readFields() {
   C.cc = $("c-cc").value; C.bcc = $("c-bcc").value;
-  C.subject = $("c-subject").value; C.body = $("c-body").value; C.use_signature = $("c-sig").checked;
+  C.subject = $("c-subject").value; C.body = getBody(); C.body_format = "html"; C.use_signature = $("c-sig").checked;
 }
 
 // ---------------------------------------------------------------- draft & templates
@@ -700,7 +863,7 @@ function libItem(name) {
         <dt>收件人</dt><dd>${rows.length ? esc(rows.map((r) => r[EMAIL_COL] + (r["公司"] ? `（${r["公司"]}）` : "")).join("\n")) : "无"}</dd>
         ${vars ? `<dt>通用变量</dt><dd>${esc(vars)}</dd>` : ""}
         <dt>附件</dt><dd>${esc((t.attachments || []).map((a) => a.name).join("、") || "无")}</dd>
-        <dt>正文</dt><dd>${esc(t.body || "")}</dd></dl>`;
+        <dt>正文</dt><dd>${esc(bodyText(t))}</dd></dl>`;
     }
   } else if (LIB.tab === "lists") {
     const l = S.lists[name];
@@ -1241,6 +1404,7 @@ function wire() {
   for (const id of ["c-cc", "c-bcc", "c-subject", "c-body"]) {
     $(id).addEventListener("input", () => { readFields(); autosave(); });
   }
+  initRte();
   for (const id of ["c-subject", "c-body"]) {
     const f = $(id);
     f.addEventListener("focus", () => (lastField = f));
