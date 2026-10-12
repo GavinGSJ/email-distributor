@@ -228,14 +228,25 @@ function filledRows() {
   return C.rows.filter((r) => C.columns.some((c) => String(r[c] || "").trim()));
 }
 
+// Every recipient row carries a hidden id so an attachment can be addressed to specific rows
+// (rows are re-ordered / deleted / re-typed freely, so position or address would not stay valid).
+function ensureRowIds() {
+  const seen = new Set();
+  for (const r of C.rows) {
+    if (!r._id || seen.has(r._id)) r._id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    seen.add(r._id);
+  }
+}
+
 function renderTable() {
+  ensureRowIds();
   const head = `<tr><th></th>${C.columns.map((c, i) => `<th>${esc(c)}${i ? ` <button class="x" data-delcol="${i}" title="删除此列">×</button>` : ' <span class="danger">*</span>'}</th>`).join("")}<th class="del"></th></tr>`;
   const body = C.rows.map((r, ri) => `<tr>
       <td class="idx">${ri + 1}</td>
       ${C.columns.map((c, ci) => `<td><input data-r="${ri}" data-c="${ci}" value="${esc(r[c] || "")}"${ci === 0 ? ' placeholder="name@company.com"' : ""}></td>`).join("")}
       <td class="del"><button class="x" data-delrow="${ri}" title="删除此行">×</button></td></tr>`).join("");
   $("rcpt-table").innerHTML = head + body;
-  renderCount(); renderVars();
+  renderCount(); renderVars(); renderAttachments();
 }
 
 function renderCount() {
@@ -728,9 +739,64 @@ function insertVar(name) {
   f.dispatchEvent(new Event("input"));
 }
 
+// Recipients an attachment is limited to: [{id, n, label}] for rows that still exist.
+function rowChoices() {
+  ensureRowIds();
+  const emailCol = C.columns[0], nameCol = C.columns.find((c, i) => i && /公司|供应商|名称/.test(c)) || C.columns[1];
+  return C.rows.map((r, i) => ({ r, n: i + 1 })).filter(({ r }) => C.columns.some((c) => String(r[c] || "").trim()))
+    .map(({ r, n }) => ({ id: r._id, n, label: [r[emailCol], nameCol && nameCol !== emailCol ? r[nameCol] : ""].filter(Boolean).join("　") || "（未填写邮箱）" }));
+}
+
+function attScope(a) {
+  if (!a.to?.length) return { text: "所有收件人", warn: false, title: "每位收件人都会收到这个附件" };
+  const live = rowChoices().filter((c) => a.to.includes(c.id));
+  if (!live.length) return { text: "⚠ 指定的收件人已删除，请重新选择", warn: true, title: "" };
+  const names = live.map((c) => c.label.split("　").pop());
+  return { text: `仅 ${live.length} 位：${names.slice(0, 3).join("、")}${live.length > 3 ? "…" : ""}`, warn: false, title: live.map((c) => c.label.replace("　", " ")).join("\n") };
+}
+
 function renderAttachments() {
-  $("att-list").innerHTML = C.attachments.map((a, i) =>
-    `<li>📎 ${esc(a.name)}<span class="size">${fmtSize(a.size)}</span><button class="x" data-delatt="${i}" title="移除">×</button></li>`).join("");
+  $("att-list").innerHTML = C.attachments.map((a, i) => {
+    const sc = attScope(a);
+    return `<li>📎 ${esc(a.name)}<span class="size">${fmtSize(a.size)}</span>
+      <button class="att-scope${a.to?.length ? " scoped" : ""}${sc.warn ? " warn" : ""}" data-scope="${i}" title="${esc(sc.title)}">发给：${esc(sc.text)} ▾</button>
+      <button class="x" data-delatt="${i}" title="移除">×</button></li>`;
+  }).join("");
+}
+
+// Pick which recipients get one attachment.
+function chooseAttachmentScope(i) {
+  const a = C.attachments[i], choices = rowChoices();
+  if (!choices.length) return toast("请先在“① 收件人”里填写收件人", true);
+  const picked = new Set((a.to || []).filter((id) => choices.some((c) => c.id === id)));
+  let all = !picked.size;
+  const draw = () => {
+    $("scope-all").checked = all; $("scope-some").checked = !all;
+    $("scope-list").classList.toggle("disabled", all);
+    $("scope-list").innerHTML = choices.map((c) =>
+      `<label><input type="checkbox" data-pick="${c.id}" ${picked.has(c.id) ? "checked" : ""} ${all ? "disabled" : ""}> <span class="muted">${c.n}.</span> ${esc(c.label)}</label>`).join("");
+    $("scope-count").textContent = all ? "" : `已选 ${picked.size} / ${choices.length} 位`;
+  };
+  modal(`<h3>“${esc(a.name)}”发给谁？</h3>
+    <label class="check"><input type="radio" name="scope" id="scope-all"> 所有收件人（默认）</label>
+    <label class="check"><input type="radio" name="scope" id="scope-some"> 只发给选中的收件人 <span id="scope-count" class="muted small"></span></label>
+    <div class="scope-tools"><button class="link small" id="scope-selall">全选</button><button class="link small" id="scope-none">清空</button></div>
+    <div id="scope-list" class="scope-list"></div>
+    <p class="muted small">没被选中的收件人收不到这个附件，但其他内容完全相同。</p>`,
+    [["取消"], ["确定", () => {
+      if (!all && !picked.size) { toast("请至少选择一位收件人，或选“所有收件人”", true); return false; }
+      if (all || picked.size === choices.length) delete a.to; else a.to = choices.filter((c) => picked.has(c.id)).map((c) => c.id);
+      renderAttachments(); autosave();
+    }, true]]);
+  $("scope-all").onchange = () => { all = true; draw(); };
+  $("scope-some").onchange = () => { all = false; draw(); };
+  $("scope-selall").onclick = () => { all = false; choices.forEach((c) => picked.add(c.id)); draw(); };
+  $("scope-none").onclick = () => { all = false; picked.clear(); draw(); };
+  $("scope-list").onchange = (e) => {
+    const id = e.target.dataset.pick; if (!id) return;
+    e.target.checked ? picked.add(id) : picked.delete(id); draw();
+  };
+  draw();
 }
 
 async function addAttachments(files) {
@@ -739,7 +805,7 @@ async function addAttachments(files) {
     catch (e) { showError(e); }
   }
   const total = C.attachments.reduce((n, a) => n + a.size, 0);
-  if (total > 20 * 1048576) toast(`附件总大小 ${fmtSize(total)}，超过 20MB 可能会被对方邮箱拒收`, true);
+  if (total > 20 * 1048576) toast(`附件总大小 ${fmtSize(total)}，超过 20MB 可能会被对方邮箱拒收（指定发给不同收件人的附件，按每封邮件各自合计）`, true);
   renderAttachments(); autosave();
 }
 
@@ -754,6 +820,7 @@ function fillCompose() {
 }
 
 function readFields() {
+  ensureRowIds();
   C.cc = $("c-cc").value; C.bcc = $("c-bcc").value;
   C.subject = $("c-subject").value; C.body = getBody(); C.body_format = "html"; C.use_signature = $("c-sig").checked;
 }
@@ -1095,6 +1162,7 @@ function historyDetail(b) {
     : '<span class="muted">未发送</span>';
   const archived = (m) => m.archived === "saved" ? '<span class="st-sent">✓</span>' : m.archived === "failed" ? '<span class="st-failed">✗</span>' : '<span class="muted">—</span>';
   const company = (m) => m.fields["公司"] || m.fields["供应商"] || "";
+  const perMail = b.mails.some((m) => m.attachments && m.attachments.length !== b.attachments.length); // scoped attachments
   return `<dl class="lib-detail">
       <dt>发件人</dt><dd>${esc(b.from)}</dd>
       <dt>抄送</dt><dd>${esc(b.cc || "无")}</dd>
@@ -1102,8 +1170,8 @@ function historyDetail(b) {
       ${vars ? `<dt>通用变量</dt><dd>${esc(vars)}</dd>` : ""}
       <dt>附件</dt><dd>${atts || "无"}</dd></dl>
     <div class="table-wrap" style="margin-top:12px"><table class="summary" style="margin:0;border:0">
-      <tr><th>#</th><th>收件人</th><th>公司</th><th>主题</th><th>结果</th><th title="是否已存入邮箱的“已发送”文件夹">已发送夹</th><th>时间</th><th></th></tr>
-      ${b.mails.map((m) => `<tr><td>${m.n}</td><td>${esc(m.to)}</td><td>${esc(company(m))}</td><td>${esc(m.subject)}</td>
+      <tr><th>#</th><th>收件人</th><th>公司</th><th>主题</th>${perMail ? "<th>附件</th>" : ""}<th>结果</th><th title="是否已存入邮箱的“已发送”文件夹">已发送夹</th><th>时间</th><th></th></tr>
+      ${b.mails.map((m) => `<tr><td>${m.n}</td><td>${esc(m.to)}</td><td>${esc(company(m))}</td><td>${esc(m.subject)}</td>${perMail ? `<td class="small">${esc((m.attachments || []).join("、") || "无")}</td>` : ""}
         <td>${status(m)}</td><td style="text-align:center">${archived(m)}</td><td class="muted small">${esc(m.time.slice(5, 16))}</td>
         <td style="white-space:nowrap"><button data-hact="view" data-n="${m.n}" class="link">查看</button></td></tr>`).join("")}
     </table></div>`;
@@ -1268,7 +1336,7 @@ async function preview(btn) {
       const m = mails[i];
       document.querySelectorAll("#pv-list li").forEach((li, j) => li.classList.toggle("active", i === j));
       $("pv-meta").innerHTML = `<div><b>收件人：</b>${esc(m.to)}</div>${m.cc ? `<div><b>抄送：</b>${esc(m.cc)}</div>` : ""}
-        <div><b>主题：</b>${esc(m.subject)}</div>${C.attachments.length ? `<div><b>附件：</b>${C.attachments.map((a) => esc(a.name)).join("、")}</div>` : ""}`;
+        <div><b>主题：</b>${esc(m.subject)}</div>${m.attachments.length ? `<div><b>附件：</b>${m.attachments.map(esc).join("、")}</div>` : C.attachments.length ? '<div><b>附件：</b><span class="muted">无（这位收件人没有被指定附件）</span></div>' : ""}`;
       $("pv-frame").srcdoc = m.html;
     };
     modal(`<h3>预览（共 ${mails.length} 封）</h3><div class="preview">
@@ -1283,7 +1351,8 @@ async function confirmSend(btn) {
   readFields();
   try {
     const { mails } = await busy(btn, () => api("/api/preview", C));
-    const att = C.attachments.map((a) => esc(a.name)).join("、") || "无";
+    const att = C.attachments.map((a) => `${esc(a.name)}${a.to?.length ? ` <span class="muted">（${esc(attScope(a).text)}）</span>` : ""}`).join("<br>") || "无";
+    const scoped = C.attachments.some((a) => a.to?.length);
     modal(`<h3>确认发送 ${mails.length} 封独立邮件</h3>
       <p class="muted">从 ${esc(S.account.email)} 发出；每位收件人单独收到一封，彼此看不到。</p>
       <table class="summary">
@@ -1292,8 +1361,8 @@ async function confirmSend(btn) {
         <tr><td><b>附件</b></td><td>${att}</td></tr>
         <tr><td><b>签名</b></td><td>${C.use_signature ? "附带" : "不附带"}</td></tr>
       </table>
-      <table class="summary"><tr><th>#</th><th>收件人</th><th>主题</th></tr>
-        ${mails.map((m, i) => `<tr><td>${i + 1}</td><td>${esc(m.to)}</td><td>${esc(m.subject)}</td></tr>`).join("")}</table>`,
+      <table class="summary"><tr><th>#</th><th>收件人</th><th>主题</th>${scoped ? "<th>附件</th>" : ""}</tr>
+        ${mails.map((m, i) => `<tr><td>${i + 1}</td><td>${esc(m.to)}</td><td>${esc(m.subject)}</td>${scoped ? `<td>${m.attachments.map(esc).join("<br>") || '<span class="muted">无</span>'}</td>` : ""}</tr>`).join("")}</table>`,
       [["取消"], ["确认发送", () => { startSend({ compose: C }, mails.map((m) => m.to)); }, true]]);
   } catch (e) { showError(e); }
 }
@@ -1358,6 +1427,7 @@ function wire() {
     const v = e.target.closest("[data-var]"); if (v) insertVar(v.dataset.var);
     const a = e.target.closest("[data-delatt]");
     if (a) { C.attachments.splice(+a.dataset.delatt, 1); renderAttachments(); autosave(); }
+    const sc = e.target.closest("[data-scope]"); if (sc) chooseAttachmentScope(+sc.dataset.scope);
   });
 
   $("acc-email").addEventListener("input", () => onEmailChange(true));

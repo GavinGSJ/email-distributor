@@ -299,6 +299,64 @@ class WebApiTests(ApiTestCase):
         self.assertEqual(status, 200, pv)
         self.assertIn("&lt;b&gt;不是标签", pv["mails"][0]["html"])
 
+    def test_attachment_scoped_to_some_recipients(self):
+        self.login()
+        quote = self.call("/api/upload", b"for everyone", raw_name="quote.txt")[1]
+        secret = self.call("/api/upload", b"only for b", raw_name="price.pdf")[1]
+        rows = [
+            {"_id": "ra", "邮箱": "a@example.com", "公司": "甲公司", "联系人": "张"},
+            {"_id": "rb", "邮箱": "b@example.com", "公司": "乙公司", "联系人": "李"},
+            {},  # blank row: ids must still line up with the recipients after it
+            {"_id": "rc", "邮箱": "c@example.com", "公司": "丙公司", "联系人": "王"},
+        ]
+        c = self.compose(rows=rows, attachments=[quote, {**secret, "to": ["rb", "rc"]}])
+
+        status, pv = self.call("/api/preview", c)
+        self.assertEqual(status, 200, pv)
+        self.assertEqual([m["attachments"] for m in pv["mails"]],
+                         [["quote.txt"], ["quote.txt", "price.pdf"], ["quote.txt", "price.pdf"]])
+
+        self.app_interval(0)
+        status, res = self.call("/api/send", {"compose": c})
+        self.assertEqual(status, 200, res)
+        self.wait(res["job"])
+        msgs = [email.message_from_bytes(data, policy=policy.default) for _, data in self.smtp.mails]
+        names = {m["To"]: [p.get_filename() for p in m.iter_attachments()] for m in msgs}
+        self.assertEqual(names["a@example.com"], ["quote.txt"])
+        self.assertEqual(names["c@example.com"], ["quote.txt", "price.pdf"])
+        # the record shows what each recipient actually got
+        _, hist = self.call("/api/history")
+        _, batch = self.call("/api/history/batch?id=" + hist["batches"][0]["id"])
+        self.assertEqual([m["attachments"] for m in batch["mails"]],
+                         [["quote.txt"], ["quote.txt", "price.pdf"], ["quote.txt", "price.pdf"]])
+
+        # a test mail follows the first recipient
+        _, pv = self.call("/api/preview", {**c, "rows": rows[1:]})
+        self.assertEqual(pv["mails"][0]["attachments"], ["quote.txt", "price.pdf"])
+
+        # scoped to rows that no longer exist: refuse instead of silently sending to nobody
+        gone = self.compose(rows=rows, attachments=[{**secret, "to": ["deleted"]}])
+        status, res = self.call("/api/preview", gone)
+        self.assertEqual(status, 400)
+        self.assertIn("price.pdf", res["error"])
+
+    def test_attachment_size_limit_is_per_mail(self):
+        import mailer.webapp as w
+
+        self.login()
+        old = w.MAX_ATTACHMENT_MB
+        w.MAX_ATTACHMENT_MB = 1
+        self.addCleanup(setattr, w, "MAX_ATTACHMENT_MB", old)
+        big = self.call("/api/upload", b"x" * 700_000, raw_name="big.bin")[1]
+        big2 = self.call("/api/upload", b"y" * 700_000, raw_name="big2.bin")[1]
+        rows = [{"_id": "ra", "邮箱": "a@example.com", "公司": "甲", "联系人": "张"},
+                {"_id": "rb", "邮箱": "b@example.com", "公司": "乙", "联系人": "李"}]
+        ok = self.compose(rows=rows, attachments=[{**big, "to": ["ra"]}, {**big2, "to": ["rb"]}])
+        self.assertEqual(self.call("/api/preview", ok)[0], 200)  # 0.7MB each, though 1.4MB in total
+        status, res = self.call("/api/preview", self.compose(rows=rows, attachments=[big, big2]))
+        self.assertEqual(status, 400)
+        self.assertTrue(all("超过上限" in p for p in res["problems"]))
+
     def test_recipient_lists(self):
         rows = [{"邮箱": "a@example.com", "公司": "甲"}, {"邮箱": "b@example.com", "公司": "乙"}]
         status, lists = self.call("/api/lists", {"name": "阀门供应商", "list": {"columns": ["邮箱", "公司"], "rows": rows}})

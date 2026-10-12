@@ -75,8 +75,14 @@ def build_mails(
     from_addr,
     from_name="",
     test_to=None,
+    attachments_for=None,
+    max_attachment_mb=None,
 ):
-    """Same as prepare() but from already-loaded pieces (used by the web UI)."""
+    """Same as prepare() but from already-loaded pieces (used by the web UI).
+
+    attachments_for: optional callable(index of the recipient) -> attachments for that
+                     mail, to give some recipients different files; default is `attachments`.
+    max_attachment_mb: if set, each mail's own attachments must stay below this total."""
     if test_to:
         cc, bcc = (), ()
     images = signature.images if signature else ()
@@ -84,7 +90,15 @@ def build_mails(
     template_subject = subject
 
     mails, problems = [], []
-    for r in recipients:
+    for i, r in enumerate(recipients):
+        mail_attachments = attachments if attachments_for is None else attachments_for(i)
+        if max_attachment_mb is not None:
+            total = sum(len(a.data) for a in mail_attachments)
+            if total > max_attachment_mb * 1024 * 1024:
+                problems.append(
+                    f"{r.source} ({', '.join(r.emails)}): 附件总大小 {total / 1024 / 1024:.1f}MB，超过上限 {max_attachment_mb}MB"
+                )
+                continue
         variables = {**shared_vars, **r.fields}
         try:
             subject = render(template_subject, variables)
@@ -117,7 +131,7 @@ def build_mails(
             text=body_text,
             html=html,
             inline_images=images,
-            attachments=attachments,
+            attachments=mail_attachments,
         )
         mails.append(PreparedMail(r, ", ".join(to), subject, message))
 
