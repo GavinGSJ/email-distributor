@@ -192,3 +192,12 @@ button.armed { color: #fff; background: var(--danger); border-color: var(--dange
 .rte-body:empty::before { content: attr(data-placeholder); color: #9aa3b2; white-space: pre-wrap; pointer-events: none; }
 .rte-body ul, .rte-body ol { margin: 0; padding-left: 1.6em; }
 .rte-body a { color: #1a56db; }
+
+/* per-attachment recipient scope */
+.att-scope { padding: 2px 10px; font-size: 12px; border-radius: 12px; color: var(--muted); }
+.att-scope.scoped { background: #eef3ff; border-color: #bfd3ff; color: var(--primary); }
+.att-scope.warn { background: #fff4f2; border-color: #f3b8b0; color: var(--danger); }
+.scope-tools { margin: 6px 0 2px; }
+.scope-list { max-height: 40vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+.scope-list label { display: flex; align-items: center; gap: 6px; font-weight: normal; margin: 0; padding: 5px 2px; cursor: pointer; }
+.scope-list.disabled { opacity: .5; }
