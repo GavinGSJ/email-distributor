@@ -9,7 +9,7 @@ DEFAULT_MAX_TOTAL_MB = 20  # most mail servers reject anything near 25MB
 
 def load_attachments(paths, max_total_mb=DEFAULT_MAX_TOTAL_MB):
     """Read every file once so the same bytes can be reused for each mail.
-    A directory means "every file directly inside it"."""
+    A directory means "every file directly inside it". max_total_mb=None: no size check."""
     files = []
     for p in map(Path, paths):
         if p.is_dir():
@@ -32,7 +32,7 @@ def load_attachments(paths, max_total_mb=DEFAULT_MAX_TOTAL_MB):
             maintype, subtype = "application", "octet-stream"
         attachments.append(Attachment(f.name, maintype, subtype, data))
 
-    if total > max_total_mb * 1024 * 1024:
+    if max_total_mb is not None and total > max_total_mb * 1024 * 1024:
         raise AttachmentError(
             f"附件总大小 {total / 1024 / 1024:.1f}MB，超过上限 {max_total_mb}MB"
         )

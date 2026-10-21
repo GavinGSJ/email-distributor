@@ -41,6 +41,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 STATIC_FILES = {"/app.js": "text/javascript; charset=utf-8", "/app.css": "text/css; charset=utf-8"}
 MAX_BODY = 60 * 1024 * 1024
 SEND_INTERVAL = 2.0
+MAX_ATTACHMENT_MB = 20  # per mail; most servers reject anything near 25MB
 IDLE_EXIT_SECONDS = 300  # quit when no page has talked to us for this long
 _BAD_VAR = re.compile(r"[{}\s]")
 
@@ -76,10 +77,19 @@ class App:
         table = [columns] + [[r.get(c, "") for c in columns] for r in rows]
         recipients = recipients_from_table(table, label=lambda n: f"第 {n - 1} 位收件人")
         shared = self._common_variables(compose.get("variables") or [], columns)
+        # the table skips blank rows, so recipients line up with the non-blank rows in order
+        row_ids = [r.get("_id") for r, cells in zip(rows, table[1:]) if any(str(c).strip() for c in cells)]
+        if len(row_ids) != len(recipients):
+            raise ConfigError("内部错误：收件人与表格行对不上，请刷新页面后重试")
+        uploads = compose.get("attachments") or []
+        attachments = [load_attachments([self.store.upload_path(a["id"])], max_total_mb=None)[0]
+                       for a in uploads]
+        scopes = [set(a.get("to") or []) or None for a in uploads]  # None = every recipient
+        for a, scope in zip(uploads, scopes):
+            if scope and not scope & set(row_ids):
+                raise ConfigError(f"附件“{a.get('name', '')}”指定的收件人已不在名单里，请重新选择，或改为发给所有收件人")
         if limit:
             recipients = recipients[:limit]
-
-        attachments = load_attachments([self.store.upload_path(a["id"]) for a in compose.get("attachments") or []])
         return build_mails(
             recipients,
             subject=subject,
@@ -88,6 +98,8 @@ class App:
             cc=parse_emails(compose.get("cc", ""), "抄送"),
             bcc=parse_emails(compose.get("bcc", ""), "密送"),
             attachments=attachments,
+            attachments_for=lambda i: [att for att, scope in zip(attachments, scopes) if scope is None or row_ids[i] in scope],
+            max_attachment_mb=MAX_ATTACHMENT_MB,
             variables=shared,
             from_addr=acc["email"],
             from_name=acc.get("name", ""),
@@ -187,7 +199,8 @@ class App:
     def save_list(self, req):
         lst = req.get("list") or {}
         columns = lst.get("columns") or []
-        rows = [r for r in lst.get("rows") or [] if any(str(r.get(c, "")).strip() for c in columns)]
+        rows = [{k: v for k, v in r.items() if k != "_id"}  # row ids only matter inside one mail
+                for r in lst.get("rows") or [] if any(str(r.get(c, "")).strip() for c in columns)]
         if rows:  # same checks as when sending, so a saved list is always usable
             recipients_from_table([columns] + [[r.get(c, "") for c in columns] for r in rows],
                                   label=lambda n: f"第 {n - 1} 位收件人")
@@ -245,7 +258,8 @@ class App:
             html = msg.get_body(("html",)).get_content()
             for cid, ctype, data in images:
                 html = html.replace(f"cid:{cid}", f"data:{ctype};base64,{base64.b64encode(data).decode()}")
-            out.append({"to": m.to, "cc": msg["Cc"] or "", "subject": m.subject, "html": html})
+            out.append({"to": m.to, "cc": msg["Cc"] or "", "subject": m.subject, "html": html,
+                        "attachments": [p.get_filename() for p in msg.iter_attachments()]})
         return {"mails": out}
 
     def send(self, req):

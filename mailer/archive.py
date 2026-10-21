@@ -56,6 +56,7 @@ class SendArchive:
                 "subject": mail.subject,
                 "fields": dict(mail.recipient.fields),
                 "eml": eml,
+                "attachments": [p.get_filename() for p in mail.message.iter_attachments()],
                 "status": "pending",
                 "error": "",
                 "archived": "",
