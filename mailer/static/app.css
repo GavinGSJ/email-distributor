@@ -218,3 +218,4 @@ button.armed { color: #fff; background: var(--danger); border-color: var(--dange
 .scope-list { max-height: 40vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
 .scope-list label { display: flex; align-items: center; gap: 6px; font-weight: normal; margin: 0; padding: 5px 2px; cursor: pointer; }
 .scope-list.disabled { opacity: .5; }
+.ver { font-size: 12px; font-weight: normal; color: var(--muted); }

@@ -9,7 +9,7 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">✉ 邮件助手</div>
+  <div class="brand">✉ 邮件助手 <span id="app-ver" class="ver"></span></div>
   <nav>
     <button data-view="compose" class="nav">写邮件</button>
     <button data-view="library" class="nav">资料管理</button>
@@ -57,6 +57,12 @@
         </div>
       </details>
       <div class="actions"><button id="acc-save" class="primary">测试并保存</button></div>
+    </div>
+    <div class="card narrow">
+      <h2>数据存储位置</h2>
+      <p class="muted">账号、模板、名单、发送记录和备份都保存在这里。<b>更新程序时不会动这个文件夹</b>，所以换新版本数据不会丢。</p>
+      <div class="field-row"><input id="data-path" type="text" readonly><button id="data-open">打开文件夹</button></div>
+      <div class="actions"><button id="data-change" class="link small">更改位置…</button></div>
     </div>
   </section>
 

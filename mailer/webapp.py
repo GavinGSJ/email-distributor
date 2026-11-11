@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import backup, providers
+from . import __version__, backup, paths, providers
 from .archive import SendArchive
 from .attachments import load_attachments
 from .body import Body, clean_editor_html, html_to_text
@@ -47,9 +47,10 @@ _BAD_VAR = re.compile(r"[{}\s]")
 
 
 class App:
-    def __init__(self, store, backup_dir=None):
+    def __init__(self, store, backup_dir=None, data_home=None):
         self.store = store
-        self.backups = backup.BackupFolder(backup_dir or Path(store.root).parent / "backups", store.root)
+        self.data_home = Path(data_home) if data_home else Path(store.root).parent
+        self.backups = backup.BackupFolder(backup_dir or self.data_home / "backups", store.root)
         self.token = secrets.token_urlsafe(24)
         self.jobs = {}
         self.lock = threading.Lock()
@@ -138,6 +139,8 @@ class App:
             "lists": self.store.recipient_lists(),
             "groups": self.store.email_groups(),
             "providers": providers.as_json(),
+            "version": __version__,
+            "data_home": str(self.data_home),
         }
 
     def save_account(self, req):
@@ -386,6 +389,19 @@ class App:
                 os.startfile(target)
         return {}
 
+    def data_open(self, _):
+        self.data_home.mkdir(parents=True, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(self.data_home)
+        return {"path": str(self.data_home)}
+
+    def data_change(self, req):
+        try:
+            new = paths.set_data_home(req.get("path", ""))
+        except OSError as e:
+            raise ConfigError(f"无法使用该位置：{e}")
+        return {"path": str(new), "restart": True}
+
     def history(self, _):
         return {"batches": self.archive.summaries()}
 
@@ -478,6 +494,8 @@ def make_handler(app, port):
         "/api/backups/inspect": app.backup_inspect,
         "/api/backups/restore": app.backup_restore,
         "/api/backups/reveal": app.backup_reveal,
+        "/api/datadir/open": app.data_open,
+        "/api/datadir/change": app.data_change,
         "/api/ping": app.ping,
         "/api/shutdown": app.shutdown,
     }
@@ -626,9 +644,10 @@ def _running_instance(info_path):
 
 
 def main(open_browser=True):
-    DEFAULT_ROOT.mkdir(parents=True, exist_ok=True)
-    _setup_output(DEFAULT_ROOT / "app.log")
-    info_path = DEFAULT_ROOT / "server.json"
+    home = paths.prepare_data_home()
+    userdata = home / "userdata"
+    _setup_output(userdata / "app.log")
+    info_path = userdata / "server.json"
     url = _running_instance(info_path)
     if url:
         print(f"邮件助手已在运行，打开页面: {url}", flush=True)
@@ -637,7 +656,7 @@ def main(open_browser=True):
         return
 
     port = _free_port()
-    app = App(Store())
+    app = App(Store(userdata), backup_dir=home / "backups", data_home=home)
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app, port))
     app.server = server
     info_path.write_text(json.dumps({"port": port}), encoding="utf-8")
