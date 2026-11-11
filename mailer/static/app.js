@@ -333,6 +333,18 @@ function getBody() {
 
 function rteChanged() { $("c-body").dispatchEvent(new Event("input", { bubbles: true })); }
 
+// Foxmail-style toolbar: a color palette, emoji panel and align/more menus,
+// plus active-state highlighting — so formatting is point-and-click, not guesswork.
+const RTE_PALETTE = [
+  "#000000", "#434343", "#666666", "#999999", "#b7b7b7", "#d9d9d9", "#ffffff",
+  "#e60000", "#ff9900", "#ffd500", "#008a00", "#00a8a8", "#0066cc", "#9933ff",
+  "#f4cccc", "#fce5cd", "#fff2cc", "#d9ead3", "#d0e0e3", "#cfe2f3", "#d9d2e9",
+  "#cc0000", "#e69138", "#f1c232", "#6aa84f", "#45818e", "#3d85c6", "#674ea7",
+  "#990000", "#b45f06", "#bf9000", "#38761d", "#134f5c", "#0b5394", "#351c75",
+];
+const RTE_EMOJIS = "😀 😊 🙂 😉 👍 🙏 👌 💪 🎉 ✅ ❤️ ⭐ 🔥 💡 📌 📎 📝 ⏰ ✔️ ❗ ❓ 🤝 ☕ 🌹 😂 😅 😭 👏 🙌 🆗 📞 📧".split(" ");
+const rteColor = { fore: "#d93025", hilite: "#fff176" };
+
 async function rteCommand(cmd, value) {
   if (cmd === "createLink") {
     saveRteSel();
@@ -361,22 +373,104 @@ async function rteCommand(cmd, value) {
       }
     }
   }
+  saveRteSel(); rteChanged(); refreshRteState();
+}
+
+function applyRteColor(kind, hex) {
+  if (hex) rteColor[kind] = hex;
+  $(kind + "-bar").style.background = rteColor[kind];
+  focusRte();
+  document.execCommand("styleWithCSS", false, true);
+  document.execCommand(kind === "fore" ? "foreColor" : "hiliteColor", false, rteColor[kind]);
   saveRteSel(); rteChanged();
+}
+
+function insertEmoji(ch) {
+  focusRte();
+  document.execCommand("insertText", false, ch);
+  saveRteSel(); rteChanged();
+}
+
+// -- toolbar popovers (palette / align / emoji / more) ----------------------
+let rtePopFor = null;
+
+function rtePopHtml(kind) {
+  if (kind === "fore" || kind === "hilite")
+    return `<div class="rte-pal">${RTE_PALETTE.map((c) => `<i data-pick="${c}" style="background:${c}" title="${c}"></i>`).join("")}</div>`
+      + `<button type="button" class="pop-item" data-more="${kind}">更多颜色…</button>`;
+  if (kind === "align")
+    return [["justifyLeft", "左对齐"], ["justifyCenter", "居中"], ["justifyRight", "右对齐"], ["justifyFull", "两端对齐"]]
+      .map(([c, t]) => `<button type="button" class="pop-item" data-cmd="${c}">${t}</button>`).join("");
+  if (kind === "emoji")
+    return `<div class="rte-emoji">${RTE_EMOJIS.map((e) => `<button type="button" data-emoji="${e}">${e}</button>`).join("")}</div>`;
+  if (kind === "more")
+    return [["createLink", "插入链接"], ["indent", "增加缩进"], ["outdent", "减少缩进"], ["insertHorizontalRule", "插入分割线"]]
+      .map(([c, t]) => `<button type="button" class="pop-item" data-cmd="${c}">${t}</button>`).join("");
+  return "";
+}
+
+function openRtePop(kind, btn) {
+  if (rtePopFor === kind) return closeRtePop();
+  saveRteSel();
+  const pop = $("rte-pop");
+  pop.innerHTML = rtePopHtml(kind);
+  pop.classList.remove("hidden");
+  rtePopFor = kind;
+  const r = btn.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
+  pop.style.top = r.bottom + 4 + "px";
+}
+
+function closeRtePop() { $("rte-pop").classList.add("hidden"); rtePopFor = null; }
+
+// Light up bold/italic/… for the current caret, and show the current font.
+function refreshRteState() {
+  const ed = $("c-body"), sel = getSelection();
+  if (!sel.rangeCount || !ed.contains(sel.anchorNode)) return;
+  for (const cmd of ["bold", "italic", "underline", "strikeThrough", "insertUnorderedList", "insertOrderedList"]) {
+    const b = document.querySelector(`#rte-bar [data-cmd="${cmd}"]`);
+    if (b) try { b.classList.toggle("active", document.queryCommandState(cmd)); } catch {}
+  }
+  try {
+    const fn = (document.queryCommandValue("fontName") || "").replace(/^['"]|['"]$/g, "");
+    const fsel = document.querySelector('#rte-bar [data-rte="fontName"]');
+    if (fn && fsel && [...fsel.options].some((o) => o.value === fn)) fsel.value = fn;
+  } catch {}
 }
 
 function initRte() {
   const ed = $("c-body"), bar = $("rte-bar");
+  if (!$("rte-pop")) {
+    const p = document.createElement("div"); p.id = "rte-pop"; p.className = "rte-pop hidden";
+    document.body.appendChild(p);
+  }
   document.execCommand("defaultParagraphSeparator", false, "div"); // Enter = new line, like webmail editors
-  document.addEventListener("selectionchange", saveRteSel);
-  bar.addEventListener("mousedown", (e) => { if (!e.target.closest("select, input")) e.preventDefault(); }); // keep the selection
+  document.addEventListener("selectionchange", () => { saveRteSel(); refreshRteState(); });
+  const keepSel = (e) => { if (!e.target.closest("select, input")) e.preventDefault(); }; // don't steal the selection
+  bar.addEventListener("mousedown", keepSel);
+  $("rte-pop").addEventListener("mousedown", keepSel);
   bar.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-cmd]"); if (b) rteCommand(b.dataset.cmd);
+    const pop = e.target.closest("[data-pop]"); if (pop) return openRtePop(pop.dataset.pop, pop);
+    const apply = e.target.closest("[data-color-apply]"); if (apply) { closeRtePop(); return applyRteColor(apply.dataset.colorApply); }
+    const b = e.target.closest("[data-cmd]"); if (b) { closeRtePop(); rteCommand(b.dataset.cmd); }
+  });
+  $("rte-pop").addEventListener("click", (e) => {
+    const pick = e.target.closest("[data-pick]"); if (pick) { applyRteColor(rtePopFor, pick.dataset.pick); return closeRtePop(); }
+    const more = e.target.closest("[data-more]");
+    if (more) {
+      const kind = more.dataset.more; closeRtePop();
+      const inp = document.createElement("input"); inp.type = "color"; inp.value = rteColor[kind];
+      inp.oninput = () => applyRteColor(kind, inp.value); inp.click(); return;
+    }
+    const em = e.target.closest("[data-emoji]"); if (em) { insertEmoji(em.dataset.emoji); return closeRtePop(); }
+    const c = e.target.closest("[data-cmd]"); if (c) { closeRtePop(); rteCommand(c.dataset.cmd); }
+  });
+  document.addEventListener("click", (e) => {
+    if (rtePopFor && !e.target.closest("#rte-pop") && !e.target.closest("[data-pop]")) closeRtePop();
   });
   bar.addEventListener("change", (e) => {
     const t = e.target;
     if (t.dataset.rte && t.value) rteCommand(t.dataset.rte, t.value);
-    if (t.dataset.rte) t.value = "";
-    if (t.dataset.color) rteCommand(t.dataset.color, t.value);
   });
   ed.addEventListener("paste", (e) => {
     e.preventDefault();
@@ -385,6 +479,8 @@ function initRte() {
     else document.execCommand("insertText", false, text);
   });
   ed.addEventListener("drop", (e) => e.preventDefault()); // dropped files/images are not supported
+  $("fore-bar").style.background = rteColor.fore;
+  $("hilite-bar").style.background = rteColor.hilite;
 }
 
 // ---------------------------------------------------------------- variables

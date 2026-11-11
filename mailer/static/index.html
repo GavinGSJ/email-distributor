@@ -139,42 +139,46 @@
       <div class="field-label">正文</div>
       <div class="rte">
         <div class="rte-bar" id="rte-bar">
+          <button type="button" class="ico" data-cmd="undo" title="撤销 (Ctrl+Z)">↶</button>
+          <button type="button" class="ico" data-cmd="redo" title="重做 (Ctrl+Y)">↷</button>
+          <span class="sep"></span>
           <select data-rte="fontName" title="字体">
-            <option value="">字体</option>
             <option value="Microsoft YaHei">微软雅黑</option>
             <option value="SimSun">宋体</option>
             <option value="SimHei">黑体</option>
             <option value="KaiTi">楷体</option>
+            <option value="FangSong">仿宋</option>
             <option value="Arial">Arial</option>
             <option value="Times New Roman">Times New Roman</option>
             <option value="Courier New">Courier New</option>
           </select>
           <select data-rte="fontSize" title="字号">
-            <option value="">字号</option>
-            <option value="12px">12</option><option value="14px">14</option><option value="16px">16</option>
+            <option value="12px">12</option><option value="14px" selected>14</option><option value="16px">16</option>
             <option value="18px">18</option><option value="20px">20</option><option value="24px">24</option>
-            <option value="32px">32</option>
+            <option value="28px">28</option><option value="32px">32</option>
           </select>
           <span class="sep"></span>
-          <button type="button" data-cmd="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
-          <button type="button" data-cmd="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
-          <button type="button" data-cmd="underline" title="下划线 (Ctrl+U)"><u>U</u></button>
-          <button type="button" data-cmd="strikeThrough" title="删除线"><s>S</s></button>
+          <span class="rte-split" title="文字颜色">
+            <button type="button" class="rte-split-main" data-color-apply="fore"><b>A</b><i class="bar" id="fore-bar"></i></button>
+            <button type="button" class="rte-split-arrow" data-pop="fore" title="选择文字颜色">▾</button>
+          </span>
+          <span class="rte-split" title="背景色">
+            <button type="button" class="rte-split-main" data-color-apply="hilite"><b class="hl">A</b><i class="bar" id="hilite-bar"></i></button>
+            <button type="button" class="rte-split-arrow" data-pop="hilite" title="选择背景色">▾</button>
+          </span>
           <span class="sep"></span>
-          <label class="clr" title="文字颜色">A<input type="color" data-color="foreColor" value="#d93025"></label>
-          <label class="clr hl" title="背景高亮">▇<input type="color" data-color="hiliteColor" value="#fff176"></label>
+          <button type="button" class="ico" data-cmd="bold" title="加粗 (Ctrl+B)"><b>B</b></button>
+          <button type="button" class="ico" data-cmd="italic" title="斜体 (Ctrl+I)"><i>I</i></button>
+          <button type="button" class="ico" data-cmd="underline" title="下划线 (Ctrl+U)"><u>U</u></button>
+          <button type="button" class="ico" data-cmd="strikeThrough" title="删除线"><s>S</s></button>
           <span class="sep"></span>
-          <button type="button" data-cmd="justifyLeft" title="左对齐">⇤</button>
-          <button type="button" data-cmd="justifyCenter" title="居中">↔</button>
-          <button type="button" data-cmd="justifyRight" title="右对齐">⇥</button>
+          <button type="button" class="ico" data-cmd="insertUnorderedList" title="项目符号">•≡</button>
+          <button type="button" class="ico" data-cmd="insertOrderedList" title="编号">1.≡</button>
           <span class="sep"></span>
-          <button type="button" data-cmd="insertUnorderedList" title="项目符号">• ≡</button>
-          <button type="button" data-cmd="insertOrderedList" title="编号">1. ≡</button>
-          <button type="button" data-cmd="outdent" title="减少缩进">⇠</button>
-          <button type="button" data-cmd="indent" title="增加缩进">⇢</button>
-          <span class="sep"></span>
-          <button type="button" data-cmd="createLink" title="插入链接">🔗</button>
-          <button type="button" data-cmd="removeFormat" title="清除格式">清除格式</button>
+          <button type="button" class="ico" data-pop="align" title="对齐方式">≡<span class="caret">▾</span></button>
+          <button type="button" class="ico" data-pop="emoji" title="插入表情">☺</button>
+          <button type="button" class="ico" data-cmd="removeFormat" title="清除格式">清除</button>
+          <button type="button" class="ico" data-pop="more" title="更多（链接、缩进、分割线）">⋯<span class="caret">▾</span></button>
         </div>
         <div id="c-body" class="rte-body" contenteditable="true" spellcheck="false"
              data-placeholder="{{联系人}}，您好：&#10;&#10;我司现就「{{项目名称}}」项目的 {{采购物资}} 向贵司询价……"></div>
