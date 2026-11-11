@@ -4,3 +4,4 @@ backups/
 output/
 *.sendlog.jsonl
 __pycache__/
+dist/
