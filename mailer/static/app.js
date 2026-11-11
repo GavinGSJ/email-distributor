@@ -184,6 +184,24 @@ function renderWho() {
   $("who").textContent = a ? `${a.name ? a.name + " · " : ""}${a.email}` : "";
 }
 
+function renderDataInfo() {
+  if (S.version) $("app-ver").textContent = "v" + S.version;
+  if (S.data_home) $("data-path").value = S.data_home;
+}
+
+async function changeDataDir() {
+  const cur = $("data-path").value;
+  const path = await ask("新的数据文件夹（完整路径，例如 D:\\\\邮件助手数据）", cur);
+  if (!path || path === cur) return;
+  try {
+    const r = await api("/api/datadir/change", { path });
+    $("data-path").value = r.path;
+    modal(`<h3>位置已更改</h3><p>新位置：<b>${esc(r.path)}</b></p>` +
+      `<p class="muted">请<b>退出并重新打开</b>邮件助手，重启时会自动把数据搬到新位置。</p>`,
+      [["知道了", null, true]]);
+  } catch (e) { showError(e); }
+}
+
 // ---------------------------------------------------------------- signature
 let sigLogo = null;
 
@@ -1401,7 +1419,7 @@ async function reloadAfterRestore() {
   Object.assign(S, fresh);
   if (fresh.draft) C = fresh.draft;
   if (!C.rows?.length) C.rows = [{}];
-  fillCompose(); renderWho(); renderTemplates();
+  fillCompose(); renderWho(); renderDataInfo(); renderTemplates();
   HIST.list = null; HIST.open = null;
 }
 
@@ -1604,6 +1622,8 @@ function wire() {
   $("btn-preview").onclick = (e) => preview(e.currentTarget);
   $("btn-test").onclick = testSend;
   $("btn-send").onclick = (e) => confirmSend(e.currentTarget);
+  $("data-open").onclick = () => api("/api/datadir/open", {}).catch(showError);
+  $("data-change").onclick = changeDataDir;
 }
 
 async function init() {
@@ -1612,7 +1632,7 @@ async function init() {
   catch (e) { return toast(e.message, true); }
   C = S.draft || blankCompose();
   if (!C.rows?.length) C.rows = [{}];
-  fillCompose(); renderWho();
+  fillCompose(); renderWho(); renderDataInfo();
   setInterval(() => api("/api/ping", {}).catch(() => {}), 30000); // keeps the background program alive
   go(S.account ? "compose" : "account");
 }
